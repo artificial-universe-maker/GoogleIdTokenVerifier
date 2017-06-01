@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math/big"
@@ -50,6 +49,12 @@ type TokenInfo struct {
 	Exp           int64  `json:"exp"`
 }
 
+var (
+	ErrorTokenInvalidAudience error = errors.New("Token is not valid, Audience from token and certificate don't match")
+	ErrorTokenInvalidISS      error = errors.New("Token is not valid, ISS from token and certificate don't match")
+	ErrorTokenExpired         error = errors.New("Token is not valid, Token is expired")
+)
+
 // Verify accepts an auth token, a Google app Client ID, and an optional http client override
 // If the token is valid, TokenInfo is returned. Otherwise, a null pointer and an error are returned
 func Verify(authToken string, aud string, client *http.Client) (*TokenInfo, error) {
@@ -67,17 +72,13 @@ func VerifyGoogleIDToken(authToken string, certs *Certs, aud string) (*TokenInfo
 
 	tokeninfo := getTokenInfo(payload)
 	if aud != tokeninfo.Aud {
-		err := errors.New("Token is not valid, Audience from token and certificate don't match")
-		fmt.Printf("Error verifying key %s\n", err.Error())
-		return nil, err
+		return nil, ErrorTokenInvalidAudience
 	}
 	if (tokeninfo.Iss != "accounts.google.com") && (tokeninfo.Iss != "https://accounts.google.com") {
-		err := errors.New("Token is not valid, ISS from token and certificate don't match")
-		return nil, err
+		return nil, ErrorTokenInvalidISS
 	}
 	if !checkTime(tokeninfo) {
-		err := errors.New("Token is not valid, Token is expired")
-		return nil, err
+		return nil, ErrorTokenExpired
 	}
 
 	key, err := choiceKeyByKeyID(certs.Keys, getAuthTokenKeyID(header))
