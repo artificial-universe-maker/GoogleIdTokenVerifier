@@ -53,6 +53,7 @@ var (
 	ErrorTokenInvalidAudience error = errors.New("Token is not valid, Audience from token and certificate don't match")
 	ErrorTokenInvalidISS      error = errors.New("Token is not valid, ISS from token and certificate don't match")
 	ErrorTokenExpired         error = errors.New("Token is not valid, Token is expired")
+	ErrorTokenInvalidKey      error = errors.New("Token is not valid, KeyID from token and certificate don't match")
 )
 
 // Verify accepts an auth token, a Google app Client ID, and an optional http client override
@@ -127,18 +128,14 @@ func urlsafeB64decode(str string) []byte {
 	return bt
 }
 
-func choiceKeyByKeyID(a []keys, tknkid string) (keys, error) {
-	if len(a) == 2 {
-		if a[0].Kid == tknkid {
-			return a[0], nil
-		}
-		if a[1].Kid == tknkid {
-			return a[1], nil
+func choiceKeyByKeyID(a []keys, tknkid string) (*keys, error) {
+	for _, key := range a {
+		if key.Kid == tknkid {
+			return &key, nil
 		}
 	}
-	err := errors.New("Token is not valid, kid from token and certificate don't match")
-	var b keys
-	return b, err
+
+	return nil, ErrorTokenInvalidKey
 }
 
 func getAuthTokenKeyID(bt []byte) string {
