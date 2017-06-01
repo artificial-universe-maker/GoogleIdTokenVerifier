@@ -50,49 +50,46 @@ type TokenInfo struct {
 	Exp           int64  `json:"exp"`
 }
 
-// https://developers.google.com/identity/sign-in/web/backend-auth
-// https://github.com/google/oauth2client/blob/master/oauth2client/crypt.py
-
-// Verify is
-func Verify(authToken string, aud string) *TokenInfo {
-	return VerifyGoogleIDToken(authToken, GetCerts(GetCertsFromURL()), aud)
+// Verify accepts an auth token, a Google app Client ID, and an optional http client override
+// If the token is valid, TokenInfo is returned. Otherwise, a null pointer and an error are returned
+func Verify(authToken string, aud string, client *http.Client) (*TokenInfo, error) {
+	var _client *http.Client
+	if client == nil {
+		_client = http.DefaultClient
+	} else {
+		_client = client
+	}
+	return VerifyGoogleIDToken(authToken, GetCerts(GetCertsFromURL(_client)), aud)
 }
 
-// VerifyGoogleIDToken is
-func VerifyGoogleIDToken(authToken string, certs *Certs, aud string) *TokenInfo {
+func VerifyGoogleIDToken(authToken string, certs *Certs, aud string) (*TokenInfo, error) {
 	header, payload, signature, messageToSign := divideAuthToken(authToken)
 
 	tokeninfo := getTokenInfo(payload)
-	var niltokeninfo *TokenInfo
-	//fmt.Println(tokeninfo)
 	if aud != tokeninfo.Aud {
 		err := errors.New("Token is not valid, Audience from token and certificate don't match")
 		fmt.Printf("Error verifying key %s\n", err.Error())
-		return niltokeninfo
+		return nil, err
 	}
 	if (tokeninfo.Iss != "accounts.google.com") && (tokeninfo.Iss != "https://accounts.google.com") {
 		err := errors.New("Token is not valid, ISS from token and certificate don't match")
-		fmt.Printf("Error verifying key %s\n", err.Error())
-		return niltokeninfo
+		return nil, err
 	}
 	if !checkTime(tokeninfo) {
-		err := errors.New("Token is not valid, Token is expired.")
-		fmt.Printf("Error verifying key %s\n", err.Error())
-		return niltokeninfo
+		err := errors.New("Token is not valid, Token is expired")
+		return nil, err
 	}
 
 	key, err := choiceKeyByKeyID(certs.Keys, getAuthTokenKeyID(header))
 	if err != nil {
-		fmt.Printf("Error verifying key %s\n", err.Error())
-		return niltokeninfo
+		return nil, err
 	}
 	pKey := rsa.PublicKey{N: byteToInt(urlsafeB64decode(key.N)), E: btrToInt(byteToBtr(urlsafeB64decode(key.E)))}
 	err = rsa.VerifyPKCS1v15(&pKey, crypto.SHA256, messageToSign, signature)
 	if err != nil {
-		fmt.Printf("Error verifying key %s\n", err.Error())
-		return niltokeninfo
+		return nil, err
 	}
-	return tokeninfo
+	return tokeninfo, nil
 }
 
 func getTokenInfo(bt []byte) *TokenInfo {
@@ -108,15 +105,13 @@ func checkTime(tokeninfo *TokenInfo) bool {
 	return true
 }
 
-//GetCertsFromURL is
-func GetCertsFromURL() []byte {
-	res, _ := http.Get("https://www.googleapis.com/oauth2/v3/certs")
+func GetCertsFromURL(client *http.Client) []byte {
+	res, _ := client.Get("https://www.googleapis.com/oauth2/v3/certs")
 	certs, _ := ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	return certs
 }
 
-//GetCerts is
 func GetCerts(bt []byte) *Certs {
 	var certs *Certs
 	json.Unmarshal(bt, &certs)
